@@ -5,6 +5,7 @@
 //- -----------------------------------------------------------------------------------------------------------------------
 // define this to read the device id, serial and device type from bootloader section
 // #define USE_OTA_BOOTLOADER
+#define USE_CC1101_ALT_FREQ_86835
 
 #include <AskSinPP.h>
 #include <LowPower.h>
@@ -27,10 +28,10 @@
 #define LED_TYPE        WS2812B
 #define COLOR_ORDER     GRB
 struct _LED {
-  CRGB     LEDs[32];
+  CRGB     Pixels[32];
+  uint8_t  PixelCount = 16;
   bool     isRunning  = false;
   uint8_t  FadeBPM    = 60;
-  uint8_t  Count      = 16;
   uint32_t Color      = CRGB::Black;
   uint8_t  Brightness = 0;
 } LED;
@@ -51,8 +52,8 @@ using namespace as;
 
 // define all device properties
 const struct DeviceInfo PROGMEM devinfo = {
-  {0xf3, 0x44, 0x00},          // Device ID
-  "JPMP300000",                // Device Serial
+  {0xf3, 0x44, 0x01},          // Device ID
+  "JPMP300001",                // Device Serial
   {0xf3, 0x44},                // Device Model
   0x10,                        // Firmware Version
   as::DeviceType::OutputUnit,  // Device Type
@@ -71,10 +72,12 @@ class Hal: public BaseHal {
   public:
     void init(const HMID& id) {
       BaseHal::init(id);
+#ifdef USE_CC1101_ALT_FREQ_86835
       // 2165E8 == 868.35 MHz
       radio.initReg(CC1101_FREQ2, 0x21);
       radio.initReg(CC1101_FREQ1, 0x65);
       radio.initReg(CC1101_FREQ0, 0xE8);
+#endif
     }
 
     bool runready () {
@@ -105,7 +108,7 @@ class LEDList1 : public RegList1<Reg1> {
 
     void defaults () {
       clear();
-      //ledCount(16);
+      ledCount(16);
     }
 };
 
@@ -133,12 +136,12 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
     void ledOff() {
       LED.isRunning = false;
       LED.Color = CRGB::Black;
-      fill_solid(LED.LEDs, LED.Count, LED.Color);
+      fill_solid(LED.Pixels, LED.PixelCount, LED.Color);
       FastLED.show();
     }
 
     void configChanged() {
-      LED.Count = max(this->getList1().ledCount(), 1);
+      LED.PixelCount = max(this->getList1().ledCount(), 1);
     }
 
     uint8_t flags () const {
@@ -180,6 +183,9 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
         case 71:
           LED.Color = CRGB::White;
           break;
+        case 81:
+          LED.Color = CRGB::Orange;
+        break;
       }
 
       sysclock.cancel(ledAlarm);
@@ -199,10 +205,20 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
     }
 
     void init() {
-      FastLED.addLeds<LED_TYPE, WS_DATA_PIN, COLOR_ORDER>(LED.LEDs, LED.Count).setCorrection(TypicalLEDStrip);
-      FastLED.setBrightness(0);
-      fill_solid(LED.LEDs, LED.Count, CRGB::Black);
+      FastLED.addLeds<LED_TYPE, WS_DATA_PIN, COLOR_ORDER>(LED.Pixels, LED.PixelCount).setCorrection(TypicalLEDStrip);
+      FastLED.setBrightness(64);
+
+      uint32_t bootColors[3] = {CRGB::Red, CRGB::Green, CRGB::Blue };
+
+      for (uint8_t i = 0; i < 3; i++) {
+        fill_solid(LED.Pixels, LED.PixelCount, bootColors[i]);
+        FastLED.show();
+        _delay_ms(400);
+      }
+
+      fill_solid(LED.Pixels, LED.PixelCount, CRGB::Black);
       FastLED.show();
+
       typename BaseChannel::List1 l1 = BaseChannel::getList1();
       this->set(l1.powerUpAction() == true ? 200 : 0, 0, 0xffff );
       this->changed(true);
@@ -265,7 +281,7 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
     }
 
     void configChanged() {
-      DPRINTLN("MP3 List 1 Changed");
+      //DPRINTLN("MP3 List 1 Changed");
     }
 
     bool process (const ActionSetMsg& msg) {
@@ -278,10 +294,10 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
     }
 
     bool process (const ActionCommandMsg& msg) {
-      for (int i = 0; i < msg.len(); i++) {
+      /*for (int i = 0; i < msg.len(); i++) {
         DHEX(msg.value(i)); DPRINT(" ");
       }
-      DPRINTLN("");
+      DPRINTLN("");*/
 
       sysclock.cancel(mp3Alarm);
 
@@ -313,10 +329,10 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
     void init() {
       DFSerial.begin(9600);
       if (!DFPlayer.Device.begin(DFSerial)) {
-        DPRINTLN("DFPlayer Init Error.");
+        DPRINTLN(F("DFPlayer Init Error."));
         while (1) {  }
       }
-      DPRINTLN("DFPlayer Mini online.");
+      DPRINTLN(F("DFPlayer Mini online."));
       DFPlayer.Device.volume(0);
       typename BaseChannel::List1 l1 = BaseChannel::getList1();
       this->set(l1.powerUpAction() == true ? 200 : 0, 0, 0xffff );
@@ -371,7 +387,7 @@ void setup () {
 
 void loop() {
 
-  //Check if DFPlayer is playing
+  //Check if DFPlayer is still playing
   EVERY_N_MILLISECONDS(200) {
     sdev.Mp3Channel().checkBusy();
   }
@@ -382,12 +398,12 @@ void loop() {
     hal.activity.savePower<Idle<>>(hal);
   } else if (LED.isRunning == true) {
     EVERY_N_MILLISECONDS(LED.FadeBPM / 3) {
-      if (LED.Count > 1) {
-        fadeToBlackBy(LED.LEDs, LED.Count, 25);
-        byte pos = (beat8(LED.FadeBPM) * LED.Count) / 255;
-        LED.LEDs[pos] = LED.Color;
+      if (LED.PixelCount > 1) {
+        fadeToBlackBy(LED.Pixels, LED.PixelCount, 25);
+        byte pos = (beat8(LED.FadeBPM) * LED.PixelCount) / 255;
+        LED.Pixels[pos] = LED.Color;
       } else {
-        fill_solid(LED.LEDs, LED.Count, LED.Color);
+        fill_solid(LED.Pixels, LED.PixelCount, LED.Color);
       }
     }
   }
