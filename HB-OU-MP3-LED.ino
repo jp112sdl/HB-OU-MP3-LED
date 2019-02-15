@@ -18,7 +18,7 @@
 #include <SoftwareSerial.h>
 
 #define CONFIG_BUTTON_PIN 6
-#define DEVICE_LED_PIN    4
+#define STATUS_LED_PIN    4
 #define WS_DATA_PIN       7
 #define DF_BUSY_PIN       5
 #define DF_RX_PIN         8
@@ -60,12 +60,9 @@ const struct DeviceInfo PROGMEM devinfo = {
   {0x00, 0x01}                 // Info Bytes
 };
 
-/**
-   Configure the used hardware
-*/
 typedef AvrSPI<10, 11, 12, 13> RadioSPI;
 typedef Radio<RadioSPI, 2> RadioType;
-typedef StatusLed<DEVICE_LED_PIN> LedType;
+typedef StatusLed<STATUS_LED_PIN> LedType;
 typedef AskSin<LedType, NoBattery, RadioType> BaseHal;
 //BaseHal hal;
 class Hal: public BaseHal {
