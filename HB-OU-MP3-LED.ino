@@ -5,7 +5,7 @@
 //- -----------------------------------------------------------------------------------------------------------------------
 // define this to read the device id, serial and device type from bootloader section
 // #define USE_OTA_BOOTLOADER
-#define USE_CC1101_ALT_FREQ_86835
+// #define USE_CC1101_ALT_FREQ_86835
 
 #include <AskSinPP.h>
 #include <LowPower.h>
@@ -52,8 +52,8 @@ using namespace as;
 
 // define all device properties
 const struct DeviceInfo PROGMEM devinfo = {
-  {0xf3, 0x44, 0x01},          // Device ID
-  "JPMP300001",                // Device Serial
+  {0xf3, 0x44, 0x00},          // Device ID
+  "JPMP300000",                // Device Serial
   {0xf3, 0x44},                // Device Model
   0x10,                        // Firmware Version
   as::DeviceType::OutputUnit,  // Device Type
@@ -82,19 +82,19 @@ class Hal: public BaseHal {
     }
 } hal;
 
-DEFREGISTER(Reg0, MASTERID_REGS, DREG_LOCALRESETDISABLE)
-class OUList0 : public RegList0<Reg0> {
+DEFREGISTER(OUReg0, MASTERID_REGS)
+class OUList0 : public RegList0<OUReg0> {
   public:
-    OUList0(uint16_t addr) : RegList0<Reg0>(addr) {}
+    OUList0(uint16_t addr) : RegList0<OUReg0>(addr) {}
     void defaults () {
       clear();
     }
 };
 
-DEFREGISTER(Reg1, CREG_LEDCOUNT )
-class LEDList1 : public RegList1<Reg1> {
+DEFREGISTER(LEDReg1, CREG_LEDCOUNT )
+class LEDList1 : public RegList1<LEDReg1> {
   public:
-    LEDList1(uint16_t addr) : RegList1<Reg1>(addr) {}
+    LEDList1(uint16_t addr) : RegList1<LEDReg1>(addr) {}
 
     bool ledCount (uint8_t value) const {
       return this->writeRegister(CREG_LEDCOUNT, value & 0xff);
@@ -109,11 +109,39 @@ class LEDList1 : public RegList1<Reg1> {
     }
 };
 
-class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine>  {
+DEFREGISTER(MP3Reg1)
+class MP3List1 : public RegList1<MP3Reg1> {
+  public:
+    MP3List1(uint16_t addr) : RegList1<MP3Reg1>(addr) {}
+    void defaults () {
+      clear();
+    }
+};
+
+DEFREGISTER(OUReg3, SWITCH_LIST3_STANDARD_REGISTER, PREG_ACTTYPE, PREG_ACTNUM, PREG_ACTINTENS);
+typedef RegList3<OUReg3> SwPeerListEx;
+class OUList3 : public SwitchList3Tmpl<SwPeerListEx> {
+  public:
+    OUList3(uint16_t addr) : SwitchList3Tmpl<SwPeerListEx>(addr) {}
+    void defaults() {
+      SwitchList3Tmpl<SwPeerListEx>::defaults();
+    }
+    void even () {
+      SwitchList3Tmpl<SwPeerListEx>::even();
+    }
+    void odd () {
+      SwitchList3Tmpl<SwPeerListEx>::odd();
+    }
+    void single () {
+      SwitchList3Tmpl<SwPeerListEx>::single();
+    }
+};
+
+class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine>  {
   private:
     bool first;
   protected:
-    typedef ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine> BaseChannel;
+    typedef ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine> BaseChannel;
   public:
     LEDChannel () : BaseChannel(), first(true), ledAlarm(*this)  {}
     virtual ~LEDChannel() {}
@@ -125,37 +153,34 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
         virtual ~LEDTimerAlarm () {}
 
         void trigger (__attribute__ ((unused)) AlarmClock& clock)  {
-          chan.ledOff();
-          chan.BaseChannel::set( 0x00, 0x00, 0xffff );
+          chan.ledOff(true);
+
         }
     } ledAlarm;
 
-    void ledOff() {
+    void ledOff(bool setCh) {
+      sysclock.cancel(ledAlarm);
       LED.isRunning = false;
       LED.Color = CRGB::Black;
       fill_solid(LED.Pixels, LED.PixelCount, LED.Color);
       FastLED.show();
+      if (setCh) BaseChannel::set( 0x00, 0x00, 0xffff );
     }
 
-    void configChanged() {
-      LED.PixelCount = max(this->getList1().ledCount(), 1);
+    void setLedOffDelay(uint16_t dly) {
+      sysclock.cancel(ledAlarm);
+      ledAlarm.set(dly);
+      sysclock.add(ledAlarm);
     }
 
-    uint8_t flags () const {
-      return 0;
-    }
-
-    bool process (const ActionSetMsg& msg) {
-      BaseChannel::set( msg.value(), msg.ramp(), msg.delay() );
-      return true;
-    }
-
-    bool process (const ActionCommandMsg& msg) {
-      LED.Brightness = msg.value(1);
-      LED.FadeBPM = msg.value(2);
+    void ledOn() {
       FastLED.setBrightness(LED.Brightness);
+      BaseChannel::set( 0xc8, 0x00, 0xffff );
+      LED.isRunning = true;
+    }
 
-      switch (msg.value(3)) {
+    void setLedColor(uint8_t val) {
+      switch (val) {
         case 0:
           LED.Color = CRGB::Black;
           break;
@@ -182,22 +207,72 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
           break;
         case 81:
           LED.Color = CRGB::Orange;
-        break;
+          break;
       }
+    }
 
-      sysclock.cancel(ledAlarm);
+    void setLedBrightness(uint8_t val) {
+      LED.Brightness = val;
+    }
 
-      uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-      ledAlarm.set(AskSinBase::intTimeCvt(t));
+    void setLedBPM(uint8_t val) {
+      LED.FadeBPM = val;
+    }
 
-      sysclock.add(ledAlarm);
-      BaseChannel::set( 0xc8, 0x00, 0xffff );
-
-      LED.isRunning = true;
+    bool process (const ActionSetMsg& msg) {
+      BaseChannel::set( msg.value(), msg.ramp(), msg.delay() );
       return true;
     }
 
-    bool process (__attribute__((unused)) const RemoteEventMsg& msg) {
+    bool process (const ActionCommandMsg& msg) {
+      setLedBrightness(msg.value(1));
+      setLedBPM(msg.value(2));
+      uint8_t color = msg.value(3);
+
+      if (color == 0) {
+        ledOff(true);
+
+      } else {
+        setLedColor(color);
+
+        uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
+        if (t > 0 && t != 0x83CA) {
+          setLedOffDelay(AskSinBase::intTimeCvt(t));
+        }
+
+        ledOn();
+      }
+
+      return true;
+    }
+
+    bool process (const RemoteEventMsg& msg) {
+      bool lg = msg.isLong();
+      Peer p(msg.peer());
+      uint8_t cnt = msg.counter();
+      OUList3 l3 = BaseChannel::getList3(p);
+      if ( l3.valid() == true ) {
+        typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
+        if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
+          lastmsgcnt = cnt;
+          //DPRINT(F("ACT_TYPE   ")); DHEXLN(pl.actType());  // Farbe
+          //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   // BPM
+          //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());// Helligkeit
+          //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());   // Ausschaltverzögerung
+
+          if (pl.actType() == 0) {
+            ledOff(true);
+          } else {
+            setLedColor(pl.actType());
+            setLedBrightness(pl.actIntens());
+            setLedBPM(pl.actNum());
+            if (pl.offDly() > 0)
+              setLedOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
+            ledOn();
+          }
+        }
+        return true;
+      }
       return false;
     }
 
@@ -216,16 +291,23 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
       fill_solid(LED.Pixels, LED.PixelCount, CRGB::Black);
       FastLED.show();
 
-      typename BaseChannel::List1 l1 = BaseChannel::getList1();
-      this->set(l1.powerUpAction() == true ? 200 : 0, 0, 0xffff );
+      ledOff(true);
       this->changed(true);
       first = false;
+    }
+
+    uint8_t flags () const {
+      return 0;
+    }
+
+    void configChanged() {
+      LED.PixelCount = max(this->getList1().ledCount(), 1);
     }
 
     virtual void switchState(__attribute__((unused)) uint8_t oldstate, __attribute__((unused)) uint8_t newstate, __attribute__((unused)) uint32_t delay) {
       if ( newstate == AS_CM_JT_OFF ) {
         if (first == false ) {
-          this->ledOff();
+          this->ledOff(false);
         }
       }
       this->changed(true);
@@ -233,11 +315,11 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, SwitchList3, PEERS_PER_CHA
 };
 
 SoftwareSerial DFSerial(DF_RX_PIN, DF_TX_PIN);
-class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
+class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine>  {
   private:
     bool first;
   protected:
-    typedef SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0> BaseChannel;
+    typedef ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine> BaseChannel;
 
   public:
     MP3Channel () : BaseChannel(), first(false), mp3Alarm(*this) {}
@@ -249,36 +331,63 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
         virtual ~MP3TimerAlarm () {}
 
         void trigger (__attribute__ ((unused)) AlarmClock& clock)  {
-          chan.playOff();
+          // chan.playOff();
+          chan.playStop(true);
         }
     } mp3Alarm;
 
-    void playOff() {
+    void playStop(bool setCh) {
+      sysclock.cancel(mp3Alarm);
       DFPlayer.Repeat = 0;
       DFPlayer.Device.stop();
       DFPlayer.Device.volume(0);
-    }
-
-    void switchOff() {
-      DFPlayer.Repeat = 0;
-      BaseChannel::set( 0x00, 0x00, 0xffff );
+      if (setCh) BaseChannel::set( 0x00, 0x00, 0xffff );
     }
 
     void checkBusy() {
       bool _isBusy = (digitalRead(DF_BUSY_PIN) == LOW);
-      if (_isBusy == false && DFPlayer.isBusy == true) {
-        if (DFPlayer.Repeat > 0) {
-          DFPlayer.Repeat--;
-          DFPlayer.Device.playMp3Folder(DFPlayer.PlayNum);
-        } else {
-          switchOff();
+      if (DFPlayer.isBusy != _isBusy) {
+        if (_isBusy == false) {
+          if (DFPlayer.Repeat > 0) {
+            //DPRINT(F("checkBusy(): playStart, Repeat ="));DDECLN(DFPlayer.Repeat);
+            DFPlayer.Repeat--;
+            playStart(false);
+          } else {
+            //DPRINTLN(F("checkBusy(): playStop"));
+            playStop(true);
+          }
         }
       }
       DFPlayer.isBusy = _isBusy;
     }
 
-    void configChanged() {
-      //DPRINTLN("MP3 List 1 Changed");
+    void setVolume(uint8_t val) {
+      //DPRINT(F("setVolume val = ")); DDECLN(val);
+      DFPlayer.Device.volume(map(val, 0, 200, 0, 30));
+    }
+
+    void setRepeat(uint8_t val) {
+      DFPlayer.Repeat = val - 1;
+    }
+
+    void setMP3Num(uint8_t val) {
+      DFPlayer.PlayNum = val;
+    }
+
+    void setPlayOffDelay(uint16_t val) {
+      sysclock.cancel(mp3Alarm);
+      mp3Alarm.set(val);
+      sysclock.add(mp3Alarm);
+    }
+
+    void playStart(bool setChan) {
+      //DPRINT(F("playStart ")); DDECLN(setChan);
+      DFPlayer.Device.playMp3Folder(DFPlayer.PlayNum);
+      if (setChan == true) BaseChannel::set( 0xc8, 0x00, 0xffff );
+    }
+
+    void playStart() {
+      playStart(true);
     }
 
     bool process (const ActionSetMsg& msg) {
@@ -286,39 +395,61 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
       return true;
     }
 
-    bool process (__attribute__((unused)) const RemoteEventMsg& msg) {
+    bool process (const RemoteEventMsg& msg) {
+      bool lg = msg.isLong();
+      Peer p(msg.peer());
+      uint8_t cnt = msg.counter();
+      OUList3 l3 = BaseChannel::getList3(p);
+      if ( l3.valid() == true ) {
+        typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
+        if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
+          lastmsgcnt = cnt;
+          //DPRINT(F("ACT_TYPE   ")); DDECLN(pl.actType());  //MP3 Nummer
+          //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   //Anzahl Durchläufe
+          //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());//Volume
+          //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());
+
+          if (pl.actIntens() == 0) {
+            playStop(true);
+
+          } else {
+            setMP3Num(pl.actType());
+            setVolume(pl.actIntens());
+            setRepeat(pl.actNum());
+
+            if (pl.offDly() > 0)
+              setPlayOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
+
+            playStart();
+          }
+
+        }
+        return true;
+      }
       return false;
     }
 
     bool process (const ActionCommandMsg& msg) {
-      /*for (int i = 0; i < msg.len(); i++) {
-        DHEX(msg.value(i)); DPRINT(" ");
-      }
-      DPRINTLN("");*/
-
-      sysclock.cancel(mp3Alarm);
-
       uint8_t volume = msg.value(0);
       if (volume == 0x00) {
-        playOff();
+        playStop(true);
+        return true;
       } else {
-        DFPlayer.Device.volume(map(volume, 0, 200, 0, 30));
+        setVolume(volume);
       }
 
       uint8_t rept = msg.value(1);
-      DFPlayer.Repeat = rept - 1;
+      setRepeat(rept);
+
+      uint8_t playNum = msg.value(2);
+      setMP3Num(playNum);
 
       uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
       if (t != 0x83CA) {
-        mp3Alarm.set(AskSinBase::intTimeCvt(t));
-        sysclock.add(mp3Alarm);
+        setPlayOffDelay(AskSinBase::intTimeCvt(t));
       }
 
-      uint8_t playNum = msg.value(2);
-      DFPlayer.PlayNum = playNum;
-      DFPlayer.Device.playMp3Folder(playNum);
-
-      BaseChannel::set( 0xc8, 0x00, 0xffff );
+      playStart();
 
       return true;
     }
@@ -327,37 +458,45 @@ class MP3Channel : public SwitchChannel<Hal, PEERS_PER_CHANNEL, OUList0>  {
       DFSerial.begin(9600);
       if (!DFPlayer.Device.begin(DFSerial)) {
         DPRINTLN(F("DFPlayer Init Error."));
-        while (1) {  }
+      } else {
+        DPRINTLN(F("DFPlayer Mini online."));
+        playStop(true);
+
       }
-      DPRINTLN(F("DFPlayer Mini online."));
-      DFPlayer.Device.volume(0);
-      typename BaseChannel::List1 l1 = BaseChannel::getList1();
-      this->set(l1.powerUpAction() == true ? 200 : 0, 0, 0xffff );
+
       this->changed(true);
       first = false;
+    }
+
+    uint8_t flags () const {
+      return 0;
+    }
+
+    void configChanged() {
+
     }
 
     virtual void switchState(__attribute__((unused)) uint8_t oldstate, __attribute__((unused)) uint8_t newstate, __attribute__((unused)) uint32_t delay) {
       if ( newstate == AS_CM_JT_OFF ) {
         if (first == false ) {
-          this->playOff();
+          this->playStop(false);
         }
       }
       this->changed(true);
     }
 };
 
-class MP3LEDDevice : public ChannelDevice<Hal, VirtBaseChannel<Hal, OUList0>, 2, OUList0> {
+class OUDevice : public ChannelDevice<Hal, VirtBaseChannel<Hal, OUList0>, 2, OUList0> {
   public:
     VirtChannel<Hal, LEDChannel, OUList0> c1;
     VirtChannel<Hal, MP3Channel, OUList0> c2;
   public:
     typedef ChannelDevice<Hal, VirtBaseChannel<Hal, OUList0>, 2, OUList0> DeviceType;
-    MP3LEDDevice (const DeviceInfo& info, uint16_t addr) : DeviceType(info, addr) {
+    OUDevice (const DeviceInfo& info, uint16_t addr) : DeviceType(info, addr) {
       DeviceType::registerChannel(c1, 1);
       DeviceType::registerChannel(c2, 2);
     }
-    virtual ~MP3LEDDevice () {}
+    virtual ~OUDevice () {}
 
     LEDChannel& LedChannel()  {
       return c1;
@@ -368,8 +507,8 @@ class MP3LEDDevice : public ChannelDevice<Hal, VirtBaseChannel<Hal, OUList0>, 2,
 
     virtual void configChanged () {}
 };
-MP3LEDDevice sdev(devinfo, 0x20);
-ConfigButton<MP3LEDDevice> cfgBtn(sdev);
+OUDevice sdev(devinfo, 0x20);
+ConfigButton<OUDevice> cfgBtn(sdev);
 
 void setup () {
   pinMode(DF_BUSY_PIN, INPUT);
