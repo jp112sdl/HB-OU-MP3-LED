@@ -82,12 +82,13 @@ class Hal: public BaseHal {
     }
 } hal;
 
-DEFREGISTER(OUReg0, MASTERID_REGS)
+DEFREGISTER(OUReg0, MASTERID_REGS,DREG_LEDMODE)
 class OUList0 : public RegList0<OUReg0> {
   public:
     OUList0(uint16_t addr) : RegList0<OUReg0>(addr) {}
     void defaults () {
       clear();
+      ledMode(1);
     }
 };
 
