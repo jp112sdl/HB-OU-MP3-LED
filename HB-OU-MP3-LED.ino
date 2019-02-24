@@ -458,6 +458,10 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
       DFSerial.begin(9600);
       if (!DFPlayer.Device.begin(DFSerial)) {
         DPRINTLN(F("DFPlayer Init Error."));
+        FastLED.setBrightness(64);
+        fill_solid(LED.Pixels, LED.PixelCount, CRGB::Red);
+        FastLED.show();
+        while (1) {}
       } else {
         DPRINTLN(F("DFPlayer Mini online."));
         playStop(true);
