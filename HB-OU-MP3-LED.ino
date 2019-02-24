@@ -226,24 +226,27 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL
     }
 
     bool process (const ActionCommandMsg& msg) {
-      setLedBrightness(msg.value(1));
-      setLedBPM(msg.value(2));
-      uint8_t color = msg.value(3);
+      static uint8_t lastmsgcnt = 0;
+      if (msg.count() != lastmsgcnt) {
+        uint8_t volume = msg.value(0);
+        setLedBrightness(msg.value(1));
+        setLedBPM(msg.value(2));
+        uint8_t color = msg.value(3);
 
-      if (color == 0) {
-        ledOff(true);
+        if (color == 0) {
+          ledOff(true);
 
-      } else {
-        setLedColor(color);
+        } else {
+          setLedColor(color);
 
-        uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-        if (t > 0 && t != 0x83CA) {
-          setLedOffDelay(AskSinBase::intTimeCvt(t));
+          uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
+          if (t > 0 && t != 0x83CA) {
+            setLedOffDelay(AskSinBase::intTimeCvt(t));
+          }
+
+          ledOn();
         }
-
-        ledOn();
       }
-
       return true;
     }
 
@@ -431,26 +434,29 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     }
 
     bool process (const ActionCommandMsg& msg) {
-      uint8_t volume = msg.value(0);
-      if (volume == 0x00) {
-        playStop(true);
-        return true;
-      } else {
-        setVolume(volume);
+      static uint8_t lastmsgcnt = 0;
+      if (msg.count() != lastmsgcnt) {
+        uint8_t volume = msg.value(0);
+        if (volume == 0x00) {
+          playStop(true);
+          return true;
+        } else {
+          setVolume(volume);
+        }
+
+        uint8_t rept = msg.value(1);
+        setRepeat(rept);
+
+        uint8_t playNum = msg.value(2);
+        setMP3Num(playNum);
+
+        uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
+        if (t != 0x83CA) {
+          setPlayOffDelay(AskSinBase::intTimeCvt(t));
+        }
+
+        playStart();
       }
-
-      uint8_t rept = msg.value(1);
-      setRepeat(rept);
-
-      uint8_t playNum = msg.value(2);
-      setMP3Num(playNum);
-
-      uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-      if (t != 0x83CA) {
-        setPlayOffDelay(AskSinBase::intTimeCvt(t));
-      }
-
-      playStart();
 
       return true;
     }
