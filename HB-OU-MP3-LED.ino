@@ -520,8 +520,8 @@ void setup () {
   DINIT(57600, ASKSIN_PLUS_PLUS_IDENTIFIER);
   sdev.init(hal);
   buttonISR(cfgBtn, CONFIG_BUTTON_PIN);
-  sdev.Mp3Channel().init();
   sdev.LedChannel().init();
+  sdev.Mp3Channel().init();
   sdev.initDone();
   DDEVINFO(sdev);
 }
