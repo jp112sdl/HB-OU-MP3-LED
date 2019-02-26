@@ -44,8 +44,9 @@ struct _DFPlayer {
 } DFPlayer;
 
 // number of available peers per channel
-#define PEERS_PER_CHANNEL  8
-#define CREG_LEDCOUNT      0x7F
+#define PEERS_PER_CHANNEL     8
+#define CREG_INTERRUPTRUNNING 0x7E
+#define CREG_LEDCOUNT         0x7F
 
 // all library classes are placed in the namespace 'as'
 using namespace as;
@@ -82,7 +83,7 @@ class Hal: public BaseHal {
     }
 } hal;
 
-DEFREGISTER(OUReg0, MASTERID_REGS,DREG_LEDMODE)
+DEFREGISTER(OUReg0, MASTERID_REGS, DREG_LEDMODE)
 class OUList0 : public RegList0<OUReg0> {
   public:
     OUList0(uint16_t addr) : RegList0<OUReg0>(addr) {}
@@ -92,10 +93,17 @@ class OUList0 : public RegList0<OUReg0> {
     }
 };
 
-DEFREGISTER(LEDReg1, CREG_LEDCOUNT )
+DEFREGISTER(LEDReg1, CREG_LEDCOUNT, CREG_INTERRUPTRUNNING)
 class LEDList1 : public RegList1<LEDReg1> {
   public:
     LEDList1(uint16_t addr) : RegList1<LEDReg1>(addr) {}
+
+    bool interruptRunning (uint8_t value) const {
+      return this->writeRegister(CREG_INTERRUPTRUNNING, value);
+    }
+    bool interruptRunning () const {
+      return this->readRegister(CREG_INTERRUPTRUNNING, true);
+    }
 
     bool ledCount (uint8_t value) const {
       return this->writeRegister(CREG_LEDCOUNT, value & 0xff);
@@ -107,15 +115,25 @@ class LEDList1 : public RegList1<LEDReg1> {
     void defaults () {
       clear();
       ledCount(16);
+      interruptRunning(true);
     }
 };
 
-DEFREGISTER(MP3Reg1)
+DEFREGISTER(MP3Reg1, CREG_INTERRUPTRUNNING)
 class MP3List1 : public RegList1<MP3Reg1> {
   public:
     MP3List1(uint16_t addr) : RegList1<MP3Reg1>(addr) {}
+
+    bool interruptRunning (uint8_t value) const {
+      return this->writeRegister(CREG_INTERRUPTRUNNING, value);
+    }
+    bool interruptRunning () const {
+      return this->readRegister(CREG_INTERRUPTRUNNING, true);
+    }
+
     void defaults () {
       clear();
+      interruptRunning(true);
     }
 };
 
@@ -226,58 +244,63 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL
     }
 
     bool process (const ActionCommandMsg& msg) {
-      static uint8_t lastmsgcnt = 0;
-      if (msg.count() != lastmsgcnt) {
-        uint8_t volume = msg.value(0);
-        setLedBrightness(msg.value(1));
-        setLedBPM(msg.value(2));
-        uint8_t color = msg.value(3);
+      if ( (this->getList1().interruptRunning() == true && LED.isRunning == true) || LED.isRunning == false   ) {
+        static uint8_t lastmsgcnt = 0;
+        if (msg.count() != lastmsgcnt) {
+          lastmsgcnt = msg.count();
+          setLedBrightness(msg.value(1));
+          setLedBPM(msg.value(2));
+          uint8_t color = msg.value(3);
 
-        if (color == 0) {
-          ledOff(true);
+          if (color == 0) {
+            ledOff(true);
 
-        } else {
-          setLedColor(color);
+          } else {
+            setLedColor(color);
 
-          uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-          if (t > 0 && t != 0x83CA) {
-            setLedOffDelay(AskSinBase::intTimeCvt(t));
+            uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
+            if (t > 0 && t != 0x83CA) {
+              setLedOffDelay(AskSinBase::intTimeCvt(t));
+            }
+
+            ledOn();
           }
-
-          ledOn();
         }
       }
       return true;
     }
 
     bool process (const RemoteEventMsg& msg) {
-      bool lg = msg.isLong();
-      Peer p(msg.peer());
-      uint8_t cnt = msg.counter();
-      OUList3 l3 = BaseChannel::getList3(p);
-      if ( l3.valid() == true ) {
-        typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
-        if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
-          lastmsgcnt = cnt;
-          //DPRINT(F("ACT_TYPE   ")); DHEXLN(pl.actType());  // Farbe
-          //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   // BPM
-          //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());// Helligkeit
-          //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());   // Ausschaltverzögerung
+      if ( (this->getList1().interruptRunning() == true && LED.isRunning == true) || LED.isRunning == false   ) {
+        bool lg = msg.isLong();
+        Peer p(msg.peer());
+        uint8_t cnt = msg.counter();
+        OUList3 l3 = BaseChannel::getList3(p);
+        if ( l3.valid() == true ) {
+          typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
+          if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
+            lastmsgcnt = cnt;
+            //DPRINT(F("ACT_TYPE   ")); DHEXLN(pl.actType());  // Farbe
+            //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   // BPM
+            //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());// Helligkeit
+            //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());   // Ausschaltverzögerung
 
-          if (pl.actType() == 0) {
-            ledOff(true);
-          } else {
-            setLedColor(pl.actType());
-            setLedBrightness(pl.actIntens());
-            setLedBPM(pl.actNum());
-            if (pl.offDly() > 0)
-              setLedOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
-            ledOn();
+            if (pl.actType() == 0) {
+              ledOff(true);
+            } else {
+              setLedColor(pl.actType());
+              setLedBrightness(pl.actIntens());
+              setLedBPM(pl.actNum());
+              if (pl.offDly() > 0)
+                setLedOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
+              ledOn();
+            }
           }
+          return true;
         }
-        return true;
+        return false;
       }
-      return false;
+      return true;
     }
 
     void init() {
@@ -306,6 +329,7 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL
 
     void configChanged() {
       LED.PixelCount = max(this->getList1().ledCount(), 1);
+      DPRINT(F("LED Interrupt Running: ")); DDECLN(this->getList1().interruptRunning());
     }
 
     virtual void switchState(__attribute__((unused)) uint8_t oldstate, __attribute__((unused)) uint8_t newstate, __attribute__((unused)) uint32_t delay) {
@@ -400,64 +424,67 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     }
 
     bool process (const RemoteEventMsg& msg) {
-      bool lg = msg.isLong();
-      Peer p(msg.peer());
-      uint8_t cnt = msg.counter();
-      OUList3 l3 = BaseChannel::getList3(p);
-      if ( l3.valid() == true ) {
-        typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
-        if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
-          lastmsgcnt = cnt;
-          //DPRINT(F("ACT_TYPE   ")); DDECLN(pl.actType());  //MP3 Nummer
-          //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   //Anzahl Durchläufe
-          //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());//Volume
-          //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());
+      if ( (this->getList1().interruptRunning() == true && DFPlayer.isBusy == true) || DFPlayer.isBusy == false ) {
+        bool lg = msg.isLong();
+        Peer p(msg.peer());
+        uint8_t cnt = msg.counter();
+        OUList3 l3 = BaseChannel::getList3(p);
+        if ( l3.valid() == true ) {
+          typename OUList3::PeerList pl = lg ? l3.lg() : l3.sh();
+          if ( lg == false || cnt != lastmsgcnt || pl.multiExec() == true ) {
+            lastmsgcnt = cnt;
+            //DPRINT(F("ACT_TYPE   ")); DDECLN(pl.actType());  //MP3 Nummer
+            //DPRINT(F("ACT_NUM    ")); DDECLN(pl.actNum());   //Anzahl Durchläufe
+            //DPRINT(F("ACT_INTENS ")); DDECLN(pl.actIntens());//Volume
+            //DPRINT(F("OFFDELAY   ")); DDECLN(pl.offDly());
 
-          if (pl.actIntens() == 0) {
-            playStop(true);
+            if (pl.actIntens() == 0) {
+              playStop(true);
+            } else {
+              setMP3Num(pl.actType());
+              setVolume(pl.actIntens());
+              setRepeat(pl.actNum());
 
-          } else {
-            setMP3Num(pl.actType());
-            setVolume(pl.actIntens());
-            setRepeat(pl.actNum());
+              if (pl.offDly() > 0)
+                setPlayOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
 
-            if (pl.offDly() > 0)
-              setPlayOffDelay(AskSinBase::byteTimeCvt(pl.offDly()));
-
-            playStart();
+              playStart();
+            }
           }
-
+          return true;
         }
-        return true;
+        return false;
       }
-      return false;
+      return true;
     }
 
     bool process (const ActionCommandMsg& msg) {
       static uint8_t lastmsgcnt = 0;
       if (msg.count() != lastmsgcnt) {
-        uint8_t volume = msg.value(0);
-        if (volume == 0x00) {
-          playStop(true);
-          return true;
-        } else {
-          setVolume(volume);
+        lastmsgcnt = msg.count();
+        if ( (this->getList1().interruptRunning() == true && DFPlayer.isBusy == true) || DFPlayer.isBusy == false   ) {
+          uint8_t volume = msg.value(0);
+          if (volume == 0x00) {
+            playStop(true);
+            return true;
+          } else {
+            setVolume(volume);
+          }
+
+          uint8_t rept = msg.value(1);
+          setRepeat(rept);
+
+          uint8_t playNum = msg.value(2);
+          setMP3Num(playNum);
+
+          uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
+          if (t != 0x83CA) {
+            setPlayOffDelay(AskSinBase::intTimeCvt(t));
+          }
+
+          playStart();
         }
-
-        uint8_t rept = msg.value(1);
-        setRepeat(rept);
-
-        uint8_t playNum = msg.value(2);
-        setMP3Num(playNum);
-
-        uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-        if (t != 0x83CA) {
-          setPlayOffDelay(AskSinBase::intTimeCvt(t));
-        }
-
-        playStart();
       }
-
       return true;
     }
 
@@ -472,7 +499,6 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
       } else {
         DPRINTLN(F("DFPlayer Mini online."));
         playStop(true);
-
       }
 
       this->changed(true);
@@ -484,7 +510,7 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     }
 
     void configChanged() {
-
+      DPRINT(F("MP3 Interrupt Running: ")); DDECLN(this->getList1().interruptRunning());
     }
 
     virtual void switchState(__attribute__((unused)) uint8_t oldstate, __attribute__((unused)) uint8_t newstate, __attribute__((unused)) uint32_t delay) {
@@ -555,6 +581,5 @@ void loop() {
     }
   }
   FastLED.show();
-
 }
 
