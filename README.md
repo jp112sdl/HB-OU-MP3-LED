@@ -22,6 +22,16 @@ _In eigener Sache:<br/>Dieses Projekt ist 'wie es ist'. Es ist nach meinen pers√
 
 ![wiring](Images/wiring.png)
 
+
+- 1x Widerstand 1k
+- 1x Diode (z.B. 1N4148)
+- 1x PNP-Transistor (z.B. BC327)
+- 1x 5V (Reed)Relais
+_Der DFPlayer neigt im Ruhezustand zum Rauschen / Knistern.
+Es ist daher sinnvoll, den Lautsprecher nur einzuschalten, wenn auch ein MP3 abgespielt wird:_
+![wiring](Images/wiring2.png)
+
+
 ## Geh√§use
 [Tower](https://github.com/jp112sdl/HB-OU-MP3-LED/blob/master/Images/Tower.stl) <br/>
 [Deckel](https://github.com/jp112sdl/HB-OU-MP3-LED/blob/master/Images/Deckel.stl)
