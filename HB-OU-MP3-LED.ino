@@ -5,7 +5,6 @@
 //- -----------------------------------------------------------------------------------------------------------------------
 // define this to read the device id, serial and device type from bootloader section
 // #define USE_OTA_BOOTLOADER
-// #define USE_CC1101_ALT_FREQ_86835
 
 #include <AskSinPP.h>
 #include <LowPower.h>
@@ -64,24 +63,8 @@ const struct DeviceInfo PROGMEM devinfo = {
 typedef AvrSPI<10, 11, 12, 13> RadioSPI;
 typedef Radio<RadioSPI, 2> RadioType;
 typedef StatusLed<STATUS_LED_PIN> LedType;
-typedef AskSin<LedType, NoBattery, RadioType> BaseHal;
-//BaseHal hal;
-class Hal: public BaseHal {
-  public:
-    void init(const HMID& id) {
-      BaseHal::init(id);
-#ifdef USE_CC1101_ALT_FREQ_86835
-      // 2165E8 == 868.35 MHz
-      radio.initReg(CC1101_FREQ2, 0x21);
-      radio.initReg(CC1101_FREQ1, 0x65);
-      radio.initReg(CC1101_FREQ0, 0xE8);
-#endif
-    }
-
-    bool runready () {
-      return sysclock.runready() || BaseHal::runready();
-    }
-} hal;
+typedef AskSin<LedType, NoBattery, RadioType> Hal;
+Hal hal;
 
 DEFREGISTER(OUReg0, MASTERID_REGS, DREG_LEDMODE)
 class OUList0 : public RegList0<OUReg0> {
