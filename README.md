@@ -23,6 +23,7 @@ _In eigener Sache:<br/>Dieses Projekt ist 'wie es ist'. Es ist nach meinen pers√
 ![wiring](Images/wiring.png)
 
 
+### Erweiterung zum kompletten Abschalten des Lautsprechers (falls Rauschen im Idle-Zustand zu h√∂ren ist)
 - 1x Widerstand 1k
 - 1x Diode (z.B. 1N4148)
 - 1x PNP-Transistor (z.B. BC327)
@@ -43,5 +44,5 @@ Weitere Infos gibts auf der Seite von [DFRobot](https://www.dfrobot.com/wiki/ind
 
 ![ProgrammMP3](Images/CCU_Programm_MP3.png)<br/>
 
-###Programm zum Ansteuern der LEDs:
+### Programm zum Ansteuern der LEDs:
 ![ProgrammLED](Images/CCU_Programm_LED.png)
