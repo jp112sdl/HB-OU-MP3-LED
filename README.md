@@ -4,7 +4,10 @@
 
 #### :arrow_forward: erfordert [JP-HB-Devices Addon](https://github.com/jp112sdl/JP-HB-Devices-addon) Version 1.30 oder höher.
 
-_In eigener Sache:<br/>Dieses Projekt ist 'wie es ist'. Es ist nach meinen persönlichen Ansprüchen/Bedürfnissen entstanden. Individuelle Anpassungen nehme ich nicht vor._
+_**In eigener Sache:**<br/>Dieses Projekt ist 'wie es ist'.<br/>Es ist nach meinen persönlichen Bedürfnissen entstanden.<br/>Da es sich um ein reines Hobby-Projekt handelt, kann ich weder (umfangreichen) Support leisten, noch auf individuelle Wünsche eingehen.<br/>
+Bei Fragen/Hilfeersuchen bitte ans [HomeMatic Forum](https://homematic-forum.de/forum/viewforum.php?f=76) wenden.<br/>
+Beim Erstellen eines Beitrags unbedingt ein Foto vom Aufbau mitliefern.<br/>
+Anfragen ohne Bild und solche bei Verwendung kommerziell vertriebener Platinen, deren Schaltplan/Layout nicht offenliegt, werde ich nicht brücksichtigen._
 
 ![aussen](Images/Aussen.jpg)
 
