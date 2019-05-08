@@ -7,7 +7,8 @@
 _**In eigener Sache:**<br/>Dieses Projekt ist 'wie es ist'.<br/>Es ist nach meinen persönlichen Bedürfnissen entstanden.<br/>Da es sich um ein reines Hobby-Projekt handelt, kann ich weder (umfangreichen) Support leisten, noch auf individuelle Wünsche eingehen.<br/>
 Bei Fragen/Hilfeersuchen bitte ans [HomeMatic Forum](https://homematic-forum.de/forum/viewforum.php?f=76) wenden.<br/>
 Beim Erstellen eines Beitrags unbedingt ein Foto vom Aufbau mitliefern.<br/>
-Anfragen ohne Bild und solche bei Verwendung kommerziell vertriebener Platinen, deren Schaltplan/Layout nicht offenliegt, werde ich nicht brücksichtigen._
+Anfragen ohne Bild und solche bei Verwendung kommerziell vertriebener Platinen, deren Schaltplan/Layout nicht offenliegt, werde ich nicht brücksichtigen.<br/>
+Bitte auch die Hinweise zum [Addon](https://github.com/jp112sdl/JP-HB-Devices-addon) beachten! - Danke_
 
 ![aussen](Images/Aussen.jpg)
 
