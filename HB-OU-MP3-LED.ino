@@ -368,6 +368,9 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
 
     void checkBusy() {
       if (DFPlayer.isOnline == false) return;
+      // consume messages from the DFPlayer (e.g. "play finished") so that the
+      // library state does not stay "available" and the RX buffer is emptied
+      while (DFPlayer.Device.available()) DFPlayer.Device.readType();
       bool _isBusy = (digitalRead(DF_BUSY_PIN) == LOW);
       if (DFPlayer.isBusy != _isBusy) {
         if (_isBusy == false) {
@@ -495,6 +498,13 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
       } else {
         DPRINTLN(F("DFPlayer Mini online."));
         DFPlayer.isOnline = true;
+        // Do not wait for ACKs after init: once a "play finished" message has been
+        // parsed and never read, DFRobotDFPlayerMini::waitAvailable() returns
+        // immediately and its timeout no longer works. A missing ACK (e.g. stop()
+        // on an idle player or a corrupted SoftwareSerial byte) then makes
+        // sendStack() loop forever -> device hangs after playback.
+        // (disableACK() is private -> re-run begin() without ACK and without reset)
+        DFPlayer.Device.begin(DFSerial, false, false);
         playStop(true);
       }
 
