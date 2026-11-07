@@ -28,8 +28,9 @@
 
 #define LED_TYPE        WS2812B
 #define COLOR_ORDER     GRB
+#define MAX_LEDS        32
 struct _LED {
-  CRGB     Pixels[32];
+  CRGB     Pixels[MAX_LEDS];
   uint8_t  PixelCount = 16;
   bool     isRunning  = false;
   uint8_t  FadeBPM    = 60;
@@ -38,6 +39,7 @@ struct _LED {
 } LED;
 
 struct _DFPlayer {
+  bool     isOnline    = false;
   bool     isBusy      = false;
   uint8_t  Repeat      = 0;
   uint8_t  PlayNum     = 0;
@@ -171,7 +173,7 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL
       if (setCh) BaseChannel::set( 0x00, 0x00, 0xffff );
     }
 
-    void setLedOffDelay(uint16_t dly) {
+    void setLedOffDelay(uint32_t dly) {
       sysclock.cancel(ledAlarm);
       ledAlarm.set(dly);
       sysclock.add(ledAlarm);
@@ -313,7 +315,14 @@ class LEDChannel : public ActorChannel<Hal, LEDList1, OUList3, PEERS_PER_CHANNEL
     }
 
     void configChanged() {
-      LED.PixelCount = max(this->getList1().ledCount(), 1);
+      uint8_t cnt = constrain(this->getList1().ledCount(), 1, MAX_LEDS);
+      if (first == false && cnt != LED.PixelCount) {
+        // switch off all pixels (incl. those beyond the new count), then resize the controller
+        fill_solid(LED.Pixels, MAX_LEDS, CRGB::Black);
+        FastLED.show();
+        FastLED[0].setLeds(LED.Pixels, cnt);
+      }
+      LED.PixelCount = cnt;
       DPRINT(F("LED Interrupt Running: ")); DDECLN(this->getList1().interruptRunning());
     }
 
@@ -335,7 +344,7 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     typedef ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL, OUList0, SwitchStateMachine> BaseChannel;
 
   public:
-    MP3Channel () : BaseChannel(), first(false), mp3Alarm(*this) {}
+    MP3Channel () : BaseChannel(), first(true), mp3Alarm(*this) {}
     virtual ~MP3Channel() {}
     class MP3TimerAlarm : public Alarm {
         MP3Channel& chan;
@@ -358,6 +367,7 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     }
 
     void checkBusy() {
+      if (DFPlayer.isOnline == false) return;
       bool _isBusy = (digitalRead(DF_BUSY_PIN) == LOW);
       if (DFPlayer.isBusy != _isBusy) {
         if (_isBusy == false) {
@@ -380,14 +390,14 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     }
 
     void setRepeat(uint8_t val) {
-      DFPlayer.Repeat = val - 1;
+      DFPlayer.Repeat = (val > 0) ? val - 1 : 0;
     }
 
     void setMP3Num(uint8_t val) {
       DFPlayer.PlayNum = val;
     }
 
-    void setPlayOffDelay(uint16_t val) {
+    void setPlayOffDelay(uint32_t val) {
       sysclock.cancel(mp3Alarm);
       mp3Alarm.set(val);
       sysclock.add(mp3Alarm);
@@ -395,6 +405,7 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
 
     void playStart(bool setChan) {
       //DPRINT(F("playStart ")); DDECLN(setChan);
+      if (DFPlayer.isOnline == false) return;
       DFPlayer.Device.playMp3Folder(DFPlayer.PlayNum);
       if (setChan == true) BaseChannel::set( 0xc8, 0x00, 0xffff );
     }
@@ -463,7 +474,7 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
           setMP3Num(playNum);
 
           uint16_t t = ((msg.value(msg.len() - 2)) << 8) + (msg.value(msg.len() - 1));
-          if (t != 0x83CA) {
+          if (t > 0 && t != 0x83CA) {
             setPlayOffDelay(AskSinBase::intTimeCvt(t));
           }
 
@@ -476,13 +487,14 @@ class MP3Channel : public ActorChannel<Hal, MP3List1, OUList3, PEERS_PER_CHANNEL
     void init() {
       DFSerial.begin(9600);
       if (!DFPlayer.Device.begin(DFSerial)) {
+        // do not block here - the device must stay pairable/usable (LED channel) without DFPlayer
         DPRINTLN(F("DFPlayer Init Error."));
         FastLED.setBrightness(64);
         fill_solid(LED.Pixels, LED.PixelCount, CRGB::Red);
         FastLED.show();
-        while (1) {}
       } else {
         DPRINTLN(F("DFPlayer Mini online."));
+        DFPlayer.isOnline = true;
         playStop(true);
       }
 
@@ -555,16 +567,17 @@ void loop() {
   if ( worked == false && poll == false && LED.isRunning == false && DFPlayer.isBusy == false) {
     hal.activity.savePower<Idle<>>(hal);
   } else if (LED.isRunning == true) {
-    EVERY_N_MILLISECONDS(LED.FadeBPM / 3) {
+    EVERY_N_MILLISECONDS_DYNAMIC(max(LED.FadeBPM / 3, 1)) {
       if (LED.PixelCount > 1) {
         fadeToBlackBy(LED.Pixels, LED.PixelCount, 25);
-        byte pos = (beat8(LED.FadeBPM) * LED.PixelCount) / 255;
+        uint8_t pos = ((uint16_t)beat8(LED.FadeBPM) * LED.PixelCount) >> 8; // 0 .. PixelCount-1
         LED.Pixels[pos] = LED.Color;
       } else {
         fill_solid(LED.Pixels, LED.PixelCount, LED.Color);
       }
+      // only update the strip when something changed (show() disables interrupts)
+      FastLED.show();
     }
   }
-  FastLED.show();
 }
 
